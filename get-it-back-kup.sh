@@ -6,6 +6,7 @@
 ### TODO
 ### https://store.kde.org/p/1127689 says: kup can backup to remote storages as well.  Check this out!
 ### https://store.kde.org/p/1127689 says: kup can backup incrementaly (keeping older versions) or keep source and target directory in sync (i.e. not keeping older versions). Do we have to take care on this?
+### setup a remote backup repository and build code for this case as well
 
 ### where kup stores its config (via kde plasma system settings)
 # kuprc_file_path="${2:-$HOME/.config/kuprc}"
@@ -134,7 +135,7 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 	### use volume label stuff only if we have no (internal/local) filesystem destination path
 	if [[ "$filesystem_destination_path"  =~ 'file://' ]]; then
 		repository_path=${filesystem_destination_path#'file://'}
-		is_kup_repository "$repository_path" && echo "valid local path: $repository_path" >&2 || echo "NO valid local path: $repository_path" >&2
+		is_kup_repository "$repository_path" && echo "valid local path: $repository_path" >&2 || echo "no valid local path: $repository_path" >&2
 	else
 		external_drive_mount_path="$(get_external_drive_mount_path "$external_volume_label")"	# hidden or
 		external_drive_mount_path="$(mount | grep "$external_volume_label" | cut -f 3 -d ' ')"	# visible?
@@ -142,7 +143,7 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 			echo "external volume label is defined, but volume not mounted: '$external_volume_label'" >&2
 		else
 			repository_path="$external_drive_mount_path/$external_drive_destination_path"
-			is_kup_repository "$repository_path" && echo "valid external path: $repository_path" >&2 || echo "NO valid external path: $repository_path" >&2
+			is_kup_repository "$repository_path" && echo "valid external path: $repository_path" >&2 || echo "no valid external path: $repository_path" >&2
 
 			# try to get file back ...
 			# with 'kioclient ls' with this url: bup:///media/christian/MyBook/BACKUPS/Auto/Kup/solo/Entwicklung/ ?
@@ -165,15 +166,16 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 			# do we have the file?
 			search_for_path="$base_path_latest/$file_to_restore_path"
 
+			# TODO: test on entire directories
+			# TODO: is there a do-not-override option?
 			echo "looking for: $search_for_path …" >&2
  			found="$(bup --bup-dir="$bup_dir" ls "$search_for_path" 2>/dev/null)"
  			if [[ $? = 0 ]]; then
 				echo "found: $found" >&2
 				# restore to original directory
 				out_dir="$(dirname "$file_to_restore_path")"
-				set -x
+				echo "running command: bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_for_path"" >&2
 				bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_for_path"
-				set +x
  			else
 				echo "not found" >&2
  			fi
