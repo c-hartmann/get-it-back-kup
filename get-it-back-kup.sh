@@ -95,35 +95,46 @@ function get_external_drive_mount_path ()
 	echo "$(mount | grep "$external_volume_label" | cut -f 3 -d ' ')"
 }
 
-function get_path_incluced_array_DRAFT ()
-{
-	kuprc_file="${1:-$kuprc_file_path}"
-	echo -n 'DEBUG: backup pathes included: ( ' >&2; echo -n $(grep -i 'Paths included' "$kuprc_file" | cut -d '=' -f 2 | sed 's/^/"/' | sed 's/$/"/') >&2; echo ' )' >&2
-	grep -i 'Paths included' "$kuprc_file" | cut -d '=' -f 2 | sed 's/^/"/' | sed 's/$/"/'
-}
+# WARNING: this is huge f*ng mess, as it relies on a single path being included,
+#          which is just plain wrong!
+#          in fact every value in this key can be a looooong list of paths seperated by commas
+# function get_path_incluced_array_DRAFT ()
+# {
+# 	kuprc_file="${1:-$kuprc_file_path}"
+# # 	echo -n 'DEBUG: backup pathes included: ( ' >&2; echo -n $(grep -i 'Paths included' "$kuprc_file" | cut -d '=' -f 2 | sed 's/^/"/' | sed 's/$/"/') >&2; echo ' )' >&2
+# 	grep -i 'Paths included' "$kuprc_file" | cut -d '=' -f 2 | sed 's/^/"/' | sed 's/$/"/'
+# }
 
 ### get pathes that are backed up in kup plans
 # TODO: use a function (as we do for getting values by keys) or use the redundant kuprc_file def ?
 # NOTE: any ancluded backup path might be included more than once !
 # kuprc_file="${1:-$kuprc_file_path}"
 # path_incluced_array=( $(grep -i 'Paths included' "$kuprc_file" | cut -d '=' -f 2) )
-path_incluced_array=( $(get_path_incluced_array_DRAFT) )
+# path_incluced_array=( $(get_path_incluced_array_DRAFT) )
 
 ### loop over kup plans
-kup_plan_count=${#path_incluced_array[@]}
+# kup_plan_count=${#path_incluced_array[@]}
+kup_plan_count=$(grep 'Paths included=' "$kuprc_file_path" | wc -l)
+
 # TODO: add even more error resistance
 for (( i = 0 ; i < $kup_plan_count ; i++ )); do
-	path_incluced="${path_incluced_array[$i]}"
+	echo >&2
+# 	path_incluced="${path_incluced_array[$i]}"
 	plan_num=$(( i+1 ))
-	echo plan: "Plan/$plan_num"
-	echo "plan path included: $path_incluced" >&2
+	echo "plan group: [Plan/$plan_num]" >&2
+	path_incluced="$(get_key_from_config "Plan/$plan_num" 'Paths included')"
+# 	echo "plan path included: $path_incluced" >&2
+# 	continue
+
+	### get some values from plan, that might be required later
 	filesystem_destination_path="$(get_key_from_config "Plan/$plan_num" 'Filesystem destination path')"
 	external_volume_label=$(get_key_from_config "Plan/$plan_num" "External volume label")
 	external_drive_destination_path=$(get_key_from_config "Plan/$plan_num" "External drive destination path")
+
 	### use volume label stuff only if we have no (internal/local) filesystem destination path
 	if [[ "$filesystem_destination_path"  =~ 'file://' ]]; then
 		repository_path=${filesystem_destination_path#'file://'}
-		is_kup_repository "$repository_path" && echo "valid (local) path: $repository_path" >&2 || echo "NO valid (local) path: $repository_path" >&2
+		is_kup_repository "$repository_path" && echo "valid local path: $repository_path" >&2 || echo "NO valid local path: $repository_path" >&2
 	else
 		external_drive_mount_path="$(get_external_drive_mount_path "$external_volume_label")"	# hidden or
 		external_drive_mount_path="$(mount | grep "$external_volume_label" | cut -f 3 -d ' ')"	# visible?
@@ -131,35 +142,92 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 			echo "external volume label is defined, but volume not mounted: '$external_volume_label'" >&2
 		else
 			repository_path="$external_drive_mount_path/$external_drive_destination_path"
-			is_kup_repository "$repository_path" && echo "valid (external) path: $repository_path" >&2 || echo "NO valid (external) path: $repository_path" >&2
+			is_kup_repository "$repository_path" && echo "valid external path: $repository_path" >&2 || echo "NO valid external path: $repository_path" >&2
 
 			# try to get file back ...
-			# with bup(1) or kioclient(1)? (bup:///media/christian/MyBook/BACKUPS/Auto/Kup/solo/Entwicklung/)
+			# with 'kioclient ls' with this url: bup:///media/christian/MyBook/BACKUPS/Auto/Kup/solo/Entwicklung/ ?
+			# ERROR:  kf.kio.core: UDSEntry for '.' not found, creating a default one. Please fix the "kioworker" KIO worker.
+			# BUT: it returns 'kup', which is correct
+			bup_dir="$repository_path"
+
+			base_path_latest="kup/latest"
+
+			# get other pathes
+			kioclient_url="bup://$repository_path/"
+			echo "kioclient url: $kioclient_url" >&2
+			### commands pre last line is mysterious single '.' and last line is an empty one
+			kup="$(kioclient ls "$kioclient_url" 2>/dev/null | head --lines=-2)"
+ 			echo "snapshots: ..." >&2
+ 			kioclient ls "$kioclient_url/$kup" 2>/dev/null | head --lines=-2 >&2
+			snapshots=( $(kioclient ls "$kioclient_url/$kup" 2>/dev/null | head --lines=-2) )
+# 			echo "snapshots: ${snapshots[@]}" >&2
+
+			# do we have the file?
+			search_for_path="$base_path_latest/$file_to_restore_path"
+
+			echo "looking for: $search_for_path …" >&2
+ 			found="$(bup --bup-dir="$bup_dir" ls "$search_for_path" 2>/dev/null)"
+ 			if [[ $? = 0 ]]; then
+				echo "found: $found" >&2
+				# restore to original directory
+				out_dir="$(dirname "$file_to_restore_path")"
+				set -x
+				bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_for_path"
+				set +x
+ 			else
+				echo "not found" >&2
+ 			fi
 
 		fi
 	fi
 done
 
+echo >&2
 exit 0
 
 
-# sample saving operation
+# sample indexing (*not* (yet) saving) operation
 /usr/bin/bup \
 	--bup-dir=/media/christian/MyBook/BACKUPS/Auto/Kup/solo/Misc \
 	index \
 	--update \
-	--exclude /home/christian/.local/share/Trash \
-	--exclude /home/christian/.local/share/baloo \
+	--exclude \
 		/home/christian/.local \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Get my D-Bus ID/get-my-dbus-id \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Preview lt/preview-it \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Refresh (F5)/refresh-view-f5-dbus \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Remove Extension/remove-ext/remove-ext \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Run It/run-it/run-it \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Select All/select-all-dbus \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Select It/toggle-selection-mode-shift-dbus \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Terminal (F4)/terminal-panel-f4-dbus \
+		/home/christian/.local/share/baloo \
+		/home/christian/.local/share/Trash \
 		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Undo lt/undo-it \
 		/home/christian/Entwicklung/Trash It \
 		/home/christian/Entwicklung/Virtualization/VMMCON/src/bin \
 		/home/christian/Entwicklung/Virtualization/VMMCON/src/share/vmmcon
+# not clear, what was indexed here!
+
+https://manpages.ubuntu.com/manpages/trusty/man1/bup-restore.1.html
+> how bup works (and thinks)
+$ bup -d /media/christian/MyBook/BACKUPS/Auto/Kup/solo/Misc/ ls -al kup/latest/home/christian/.local
+drwxr-xr-x christian/christian           0 2024-10-12 17:33 .
+drwxrwxr-x christian/christian           0 2025-02-20 14:02 ..
+-rw------- christian/christian         218 2023-10-24 14:33 .directory
+drwxrwxr-x christian/christian           0 2025-02-17 15:53 bin
+drwx------ christian/christian           0 2023-08-11 16:16 lib
+drwxr-xr-x christian/christian           0 2025-02-20 16:15 share
+drwxrwxr-x christian/christian           0 2025-02-20 17:16 state
+drwx------ christian/christian           0 2016-01-13 14:21 tmp
+
+> same (but different)
+$ export BUP_DIR=/media/christian/MyBook/BACKUPS/Auto/Kup/solo/Misc/
+$ bup ls -al kup/latest/home/christian/.local
+drwxr-xr-x christian/christian           0 2024-10-12 17:33 .
+drwxrwxr-x christian/christian           0 2025-02-20 14:02 ..
+-rw------- christian/christian         218 2023-10-24 14:33 .directory
+drwxrwxr-x christian/christian           0 2025-02-17 15:53 bin
+...
+
+https://askubuntu.com/questions/44810/how-do-i-set-the-backup-destination-directory-of-bup
+> having different top directories for different plans might be a dump idea
+> expressivly if we wanna restore individual files and we do not know in which repo they have been backed up
+
+https://groups.google.com/g/bup-list/c/gS8nCC4eqZY?pli=1
+> merging seems not be an issue
+
+http://www.bradfordembedded.com/2016/04/backups-with-bup
+> does kup make (potentialy) use of naming?
