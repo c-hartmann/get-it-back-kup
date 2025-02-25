@@ -1,22 +1,35 @@
 #!/bin/bash
 
-### restore-it-kup.sh <file-to-restore-from-backup>
 ### get-it-back-kup.sh <file-to-restore-from-backup>
+### restore-it-kup.sh <file-to-restore-from-backup>
 
 ### TODO
 ### https://store.kde.org/p/1127689 says: kup can backup to remote storages as well.  Check this out!
 ### https://store.kde.org/p/1127689 says: kup can backup incrementaly (keeping older versions) or keep source and target directory in sync (i.e. not keeping older versions). Do we have to take care on this?
-### setup a remote backup repository and build code for this case as well
+### setup a remote backup repository and build code for this case as well (NOTE: bup can do this, but kup as well?)
+
+function usage ()
+{
+	echo "usage: $(basename $0) [ opions ] <file-to-restore-full-path>" >&2
+}
 
 ### where kup stores its config (via kde plasma system settings)
-# kuprc_file_path="${2:-$HOME/.config/kuprc}"
 kuprc_file_path="$HOME/.config/kuprc"
-options="$( getopt -o c: --long config: --name "$0" -- "$@" )"
+
+### bup restores to current directory by default
+out_dir='.'
+
+### evaluate options given (out dir option names taken from bup)
+options="$( getopt --alternative --options C:c:k: --longoptions outdir:,config:,kuprc: --name "$0" -- "$@" )"
 eval set -- "${options}"
 while true; do
 	case "$1" in
-		-c | --config )
-			kuprc_file_path="$1"
+		-k | --kuprc | -c | --config )
+			kuprc_file_path="$2"
+			shift 2
+		;;
+		-C | --outdir )
+			out_dir="$2"
 			shift 2
 		;;
 		--)
@@ -24,33 +37,30 @@ while true; do
             break
 		;;
 		*)
-            echo "unknown option: $1" >&2
-            exit 1
+            echo "Unknown option: $1" >&2
+            usage
+            exit 2
         ;;
     esac
 done
 
-### no file to retore, TODO: just quit or usage
-file_to_restore_path="${1:-/nodir}"
+### no file to retore, just quit with usage
+file_to_restore_path="${1:-/nopath}"
+[[ "$file_to_restore_path" == '/nopath' ]] && usage && exit 2
 
-### get kreadconfig command installed
+### we restore to original directory by default (if not given as option)
+[[ "$out_dir" == '.' ]] && out_dir="$(dirname "$file_to_restore_path")"
+
+### get kreadconfig command installed here
 kreadconfig_commands_array=( $(type -p kreadconfig6 kreadconfig5 kreadconfig) )
 kreadconfig_command="${kreadconfig_commands_array[0]}"
-
-# function get_key_from_config_dumb_version ()
-# {
-# 	kuprc_key="${1}"
-# 	kuprc_file="${2:$kuprc_file_path}"
-# 	grep -i "$kuprc_key" "$kuprc_file" | cut -d '=' -f 2
-# }
 
 ### get a value by key from config file
 function get_key_from_config ()
 {
 	kuprc_group="${1}"
 	kuprc_key="${2}"
-	kuprc_file="${3:-$kuprc_file_path}"
-	$kreadconfig_command --file "$kuprc_file" --group "$kuprc_group" --key "$kuprc_key"
+	$kreadconfig_command --file "$kuprc_file_path" --group "$kuprc_group" --key "$kuprc_key"
 }
 
 ### check if we there (with bup?)
@@ -59,25 +69,25 @@ function is_kup_repository ()
 {
 	repository_path="$1"
 	is_kup_repository=$(bup --bup-dir="$repository_path" ls 2>/dev/null)
-	# for clarity of code we return explicitly here
+	# for sake of clarity of code we return explicitly here
 	[[ "$is_kup_repository" == 'kup' ]] && return 0
  	return 1
 }
 
 ### check if file to restore is any of the backups plans
 ### it is in a plan, when its path starts with any element in $path_incluced_array
-function file_is_in_path_included ()
-{
-	path_file="$1"
-	path_included="$2"
-	# file is included, if  its full path starts with path_included
-	# (or we can succesfully reduce files full path by path included)
-	# is a single file allowed as path included?
-	path_relativ=${path_file#$path_included}
-	# if this reduction was succesfull, path included and relativ path are equal to file path
-	[[ "${path_included}${path_relativ}" == "${path_file}" ]] && return 0
- 	return 1
-}
+# function file_is_in_path_included ()
+# {
+# 	path_file="$1"
+# 	path_included="$2"
+# 	# file is included, if  its full path starts with path_included
+# 	# (or we can succesfully reduce files full path by path included)
+# 	# is a single file allowed as path included?
+# 	path_relativ=${path_file#$path_included}
+# 	# if this reduction was succesfull, path included and relativ path are equal to file path
+# 	[[ "${path_included}${path_relativ}" == "${path_file}" ]] && return 0
+#  	return 1
+# }
 
 # function get_plan_count ()
 # {
@@ -96,16 +106,6 @@ function get_external_drive_mount_path ()
 	echo "$(mount | grep "$external_volume_label" | cut -f 3 -d ' ')"
 }
 
-# WARNING: this is huge f*ng mess, as it relies on a single path being included,
-#          which is just plain wrong!
-#          in fact every value in this key can be a looooong list of paths seperated by commas
-# function get_path_incluced_array_DRAFT ()
-# {
-# 	kuprc_file="${1:-$kuprc_file_path}"
-# # 	echo -n 'DEBUG: backup pathes included: ( ' >&2; echo -n $(grep -i 'Paths included' "$kuprc_file" | cut -d '=' -f 2 | sed 's/^/"/' | sed 's/$/"/') >&2; echo ' )' >&2
-# 	grep -i 'Paths included' "$kuprc_file" | cut -d '=' -f 2 | sed 's/^/"/' | sed 's/$/"/'
-# }
-
 ### get pathes that are backed up in kup plans
 # TODO: use a function (as we do for getting values by keys) or use the redundant kuprc_file def ?
 # NOTE: any ancluded backup path might be included more than once !
@@ -119,13 +119,10 @@ kup_plan_count=$(grep 'Paths included=' "$kuprc_file_path" | wc -l)
 
 # TODO: add even more error resistance
 for (( i = 0 ; i < $kup_plan_count ; i++ )); do
-	echo >&2
-# 	path_incluced="${path_incluced_array[$i]}"
+	echo >&2 # just some visual separation
 	plan_num=$(( i+1 ))
 	echo "plan group: [Plan/$plan_num]" >&2
 	path_incluced="$(get_key_from_config "Plan/$plan_num" 'Paths included')"
-# 	echo "plan path included: $path_incluced" >&2
-# 	continue
 
 	### get some values from plan, that might be required later
 	filesystem_destination_path="$(get_key_from_config "Plan/$plan_num" 'Filesystem destination path')"
@@ -156,27 +153,26 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 			# get other pathes
 			kioclient_url="bup://$repository_path/"
 			echo "kioclient url: $kioclient_url" >&2
-			### commands pre last line is mysterious single '.' and last line is an empty one
+			### commands pre last line is mysterious single '.' and last line is an empty one. we remove that
 			kup="$(kioclient ls "$kioclient_url" 2>/dev/null | head --lines=-2)"
  			echo "snapshots: ..." >&2
  			kioclient ls "$kioclient_url/$kup" 2>/dev/null | head --lines=-2 >&2
 			snapshots=( $(kioclient ls "$kioclient_url/$kup" 2>/dev/null | head --lines=-2) )
-# 			echo "snapshots: ${snapshots[@]}" >&2
 
 			# do we have the file?
-			search_for_path="$base_path_latest/$file_to_restore_path"
+			search_in_backup_path="$base_path_latest/$file_to_restore_path"
 
 			# TODO: test on entire directories
 			# TODO: is there a do-not-override option?
-			echo "looking for: $search_for_path …" >&2
- 			found="$(bup --bup-dir="$bup_dir" ls "$search_for_path" 2>/dev/null)"
+			echo "looking for: $search_in_backup_path …" >&2
+ 			found="$(bup --bup-dir="$bup_dir" ls "$search_in_backup_path" 2>/dev/null)"
  			if [[ $? = 0 ]]; then
 				echo "found: $found" >&2
-				# restore to original directory
-				out_dir="$(dirname "$file_to_restore_path")"
-				echo "running command: bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_for_path"" >&2
-				bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_for_path"
- 			else
+				echo "restoring to: $out_dir" >&2
+ 				echo "running command: bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"" >&2
+				bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"
+				exit 0
+			else
 				echo "not found" >&2
  			fi
 
