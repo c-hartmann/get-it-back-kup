@@ -3,10 +3,11 @@
 ### get-it-back-kup.sh <file-to-restore-from-backup>
 ### restore-it-kup.sh <file-to-restore-from-backup>
 
-### TODO
-### https://store.kde.org/p/1127689 says: kup can backup to remote storages as well.  Check this out!
-### https://store.kde.org/p/1127689 says: kup can backup incrementaly (keeping older versions) or keep source and target directory in sync (i.e. not keeping older versions). Do we have to take care on this?
-### setup a remote backup repository and build code for this case as well (NOTE: bup can do this, but kup as well?)
+# TODO
+# handle multiple files to restore
+# https://store.kde.org/p/1127689 says: kup can backup to remote storages as well.  Check this out!
+# https://store.kde.org/p/1127689 says: kup can backup incrementaly (keeping older versions) or keep source and target directory in sync (i.e. not keeping older versions). Do we have to take care on this?
+# setup a remote backup repository and build code for this case as well (NOTE: bup can do this, but kup as well?)
 
 function usage ()
 {
@@ -29,7 +30,7 @@ while true; do
 			shift 2
 		;;
 		-C | --outdir )
-			out_dir="$2"
+			option_out_dir="$2"
 			shift 2
 		;;
 		--)
@@ -47,9 +48,6 @@ done
 ### no file to retore, just quit with usage
 file_to_restore_path="${1:-/nopath}"
 [[ "$file_to_restore_path" == '/nopath' ]] && usage && exit 2
-
-### we restore to original directory by default (if not given as option)
-[[ "$out_dir" == '.' ]] && out_dir="$(dirname "$file_to_restore_path")"
 
 ### get kreadconfig command installed here
 kreadconfig_commands_array=( $(type -p kreadconfig6 kreadconfig5 kreadconfig) )
@@ -117,6 +115,12 @@ function get_external_drive_mount_path ()
 # kup_plan_count=${#path_incluced_array[@]}
 kup_plan_count=$(grep 'Paths included=' "$kuprc_file_path" | wc -l)
 
+### loop over files given
+for file_to_restore_path in "${@}"; do
+
+### we restore to original directory by default (if not given as option)
+[[ "$option_out_dir" == '.' ]] && out_dir="$(dirname "$file_to_restore_path")" || out_dir="$option_out_dir"
+
 # TODO: add even more error resistance
 for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 	echo >&2 # just some visual separation
@@ -163,7 +167,7 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 			search_in_backup_path="$base_path_latest/$file_to_restore_path"
 
 			# TODO: test on entire directories
-			# TODO: is there a do-not-override option?
+			# TODO: is there a do-not-override option with bup?
 			echo "looking for: $search_in_backup_path …" >&2
  			found="$(bup --bup-dir="$bup_dir" ls "$search_in_backup_path" 2>/dev/null)"
  			if [[ $? = 0 ]]; then
@@ -171,61 +175,14 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 				echo "restoring to: $out_dir" >&2
  				echo "running command: bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"" >&2
 				bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"
-				exit 0
+				continue 2 # with next file to restore
 			else
 				echo "not found" >&2
  			fi
-
 		fi
 	fi
 done
 
-echo >&2
+done
+
 exit 0
-
-
-# sample indexing (*not* (yet) saving) operation
-/usr/bin/bup \
-	--bup-dir=/media/christian/MyBook/BACKUPS/Auto/Kup/solo/Misc \
-	index \
-	--update \
-	--exclude \
-		/home/christian/.local \
-		/home/christian/.local/share/baloo \
-		/home/christian/.local/share/Trash \
-		/home/christian/Entwicklung/KDE/Dolphin/Service Menus/Undo lt/undo-it \
-		/home/christian/Entwicklung/Trash It \
-		/home/christian/Entwicklung/Virtualization/VMMCON/src/bin \
-		/home/christian/Entwicklung/Virtualization/VMMCON/src/share/vmmcon
-# not clear, what was indexed here!
-
-https://manpages.ubuntu.com/manpages/trusty/man1/bup-restore.1.html
-> how bup works (and thinks)
-$ bup -d /media/christian/MyBook/BACKUPS/Auto/Kup/solo/Misc/ ls -al kup/latest/home/christian/.local
-drwxr-xr-x christian/christian           0 2024-10-12 17:33 .
-drwxrwxr-x christian/christian           0 2025-02-20 14:02 ..
--rw------- christian/christian         218 2023-10-24 14:33 .directory
-drwxrwxr-x christian/christian           0 2025-02-17 15:53 bin
-drwx------ christian/christian           0 2023-08-11 16:16 lib
-drwxr-xr-x christian/christian           0 2025-02-20 16:15 share
-drwxrwxr-x christian/christian           0 2025-02-20 17:16 state
-drwx------ christian/christian           0 2016-01-13 14:21 tmp
-
-> same (but different)
-$ export BUP_DIR=/media/christian/MyBook/BACKUPS/Auto/Kup/solo/Misc/
-$ bup ls -al kup/latest/home/christian/.local
-drwxr-xr-x christian/christian           0 2024-10-12 17:33 .
-drwxrwxr-x christian/christian           0 2025-02-20 14:02 ..
--rw------- christian/christian         218 2023-10-24 14:33 .directory
-drwxrwxr-x christian/christian           0 2025-02-17 15:53 bin
-...
-
-https://askubuntu.com/questions/44810/how-do-i-set-the-backup-destination-directory-of-bup
-> having different top directories for different plans might be a dump idea
-> expressivly if we wanna restore individual files and we do not know in which repo they have been backed up
-
-https://groups.google.com/g/bup-list/c/gS8nCC4eqZY?pli=1
-> merging seems not be an issue
-
-http://www.bradfordembedded.com/2016/04/backups-with-bup
-> does kup make (potentialy) use of naming?
