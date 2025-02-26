@@ -1,10 +1,10 @@
-# Get It Back (kup)
+# Get It Back (Kup)
 
 A KDE service menu to get files (or directories) back from Kup based backup.
 
 ## Warning
 
-This currently does not support rsync(1) based Kup backups.
+This currently does *not* support rsync(1) based Kup backups.
 
 ## Installation
 
@@ -23,10 +23,9 @@ get-it-back-kup [options] <file-to-restore-full-path>
 Whereas options are:
 
 ```
-		-k, --kuprc, -c, --config <any-kup-config-file>
-		-C, --outdir <directory-to-restore-files-in>
-		-D, --dry-run
-		-S, --no-save (do not create backups of existing files before restore)
-
+-k, --kuprc, -c, --config <any-kup-config-file>
+-C, --outdir <directory-to-restore-files-in>
+-D, --dry-run
+-S, --no-save (do not create backups of existing files before restore)
 ```
 
