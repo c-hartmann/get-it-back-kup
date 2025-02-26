@@ -16,7 +16,16 @@ set -u # fail on unused variables
 
 function usage ()
 {
-	echo "usage: $(basename $0) [ opions ] <file-to-restore-full-path>" >&2
+	echo -e "\nusage: $(basename $0) [options] <file-to-restore-full-path>" >&2
+	cat << EOF >&2
+
+	Options:
+		-k, --kuprc, -c, --config <any-kup-config-file>
+		-C, --outdir <directory-to-restore-files-in>
+		-D, --dry-run
+		-S, --no-save (do not create backups of existing files before restore)
+
+EOF
 }
 
 ### where kup stores its config (via kde plasma system settings)
@@ -35,7 +44,7 @@ no_save=false
 now=$(date --iso=minutes)
 
 ### evaluate options given (out dir option names taken from bup(1))
-options="$( getopt --alternative --options C:c:Dk:S --longoptions outdir:,config:,dry-run,kuprc:,no-save --name "$0" -- "$@" )"
+options="$( getopt --alternative --options C:c:Dhk:S --longoptions outdir:,config:,dry-run,help,kuprc:,no-save --name "$0" -- "$@" )"
 eval set -- "${options}"
 while true; do
 	case "$1" in
@@ -50,6 +59,10 @@ while true; do
 		-D | --dry-run )
 			dry_run=true
 			shift 1
+		;;
+		-h | --help )
+			usage
+			exit 0
 		;;
 		-S | --no-save )
 			no_save=true
@@ -94,54 +107,20 @@ function is_kup_repository ()
 	return 1
 }
 
-### check if file to restore is any of the backups plans
-### it is in a plan, when its path starts with any element in $path_incluced_array
-# function file_is_in_path_included ()
-# {
-# 	path_file="$1"
-# 	path_included="$2"
-# 	# file is included, if  its full path starts with path_included
-# 	# (or we can succesfully reduce files full path by path included)
-# 	# is a single file allowed as path included?
-# 	path_relativ=${path_file#$path_included}
-# 	# if this reduction was succesfull, path included and relativ path are equal to file path
-# 	[[ "${path_included}${path_relativ}" == "${path_file}" ]] && return 0
-#  	return 1
-# }
-
-# function get_plan_count ()
-# {
-# 	# we loop over an index (starting with 1) until we have no match or ...
-# 	# we just grep over the key 'Paths included', get just the values and count elements
-# 	kuprc_file="${1:-$kuprc_file_path}"
-# 	kuprc_key='Paths included'
-# 	path_incluced_array=( $(grep -i "$kuprc_key" "$kuprc_file" | cut -d '=' -f 2) )
-# 	# return count
-# 	echo "${#path_incluced_array[@]}"
-# }
-
 function get_external_drive_mount_path ()
 {
 	external_volume_label="$1"
 	echo "$(mount | grep "$external_volume_label" | cut -f 3 -d ' ')"
 }
 
-### get pathes that are backed up in kup plans
-# TODO: use a function (as we do for getting values by keys) or use the redundant kuprc_file def ?
-# NOTE: any ancluded backup path might be included more than once !
-# kuprc_file="${1:-$kuprc_file_path}"
-# path_incluced_array=( $(grep -i 'Paths included' "$kuprc_file" | cut -d '=' -f 2) )
-# path_incluced_array=( $(get_path_incluced_array_DRAFT) )
-
-### loop over kup plans
-# kup_plan_count=${#path_incluced_array[@]}
-kup_plan_count=$(grep 'Paths included=' "$kuprc_file_path" | wc -l)
-
 ### loop over files given
 for file_restore_path in "${@}"; do
 
 	### we restore to original directory by default (if not given as option)
 	[[ "$out_dir_option" == "$out_dir_default" ]] && out_dir="$(dirname "$file_restore_path")" || out_dir="$out_dir_option"
+
+	### loop over kup plans
+	kup_plan_count=$(grep 'Paths included=' "$kuprc_file_path" | wc -l)
 
 	# TODO: add even more error resistance
 	for (( i = 0 ; i < $kup_plan_count ; i++ )); do
