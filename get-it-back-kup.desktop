@@ -9,8 +9,11 @@ Icon=kup
 Actions=GetItBackKup
 
 [Desktop Action GetItBackKup]
-Name=Restore file
-Name[de]=Datei wiederherstellen
+Name=Restore file (Kup)
+Name[de]=Datei wiederherstellen (Kup)
+Name[ch]=恢复文件 (Kup)
+Name[fr]=Restaurer le fichier (Kup)
+Name[uk]=Відновити файл (Kup)
 #Name[nl]=Translation kindly requested here
 Icon=kup
 Exec=bash -c 'getitbackkup_avails=($(type -p get-it-back-kup get-it-back-kup.sh $HOME/.local/share/kio/servicemenus/get-it-back-kup.sh)); getitbackkup_command="${getitbackkup_avails[0]}"; $getitbackkup_command "%F"'
