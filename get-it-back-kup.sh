@@ -18,10 +18,18 @@ function usage ()
 kuprc_file_path="$HOME/.config/kuprc"
 
 ### bup restores to current directory by default
-out_dir='.'
+# option_out_dir='/no/dir/no/where/existing'
+option_out_dir="$(mktemp --dry-run --directory)"
+
+### by default we do!
+dry_run=false
+
+### by default we save (i.e. rename) existing (in out dir) files before replacing them
+no_save=false
+today=$(date --iso)
 
 ### evaluate options given (out dir option names taken from bup)
-options="$( getopt --alternative --options C:c:k: --longoptions outdir:,config:,kuprc: --name "$0" -- "$@" )"
+options="$( getopt --alternative --options C:c:Dk:S --longoptions outdir:,config:,dry-run,kuprc:,no-save --name "$0" -- "$@" )"
 eval set -- "${options}"
 while true; do
 	case "$1" in
@@ -33,16 +41,24 @@ while true; do
 			option_out_dir="$2"
 			shift 2
 		;;
+		-D | --dry-run )
+			dry_run=true
+			shift 1
+		;;
+		-S | --no-save )
+			no_save=true
+			shift 1
+		;;
 		--)
-            shift
-            break
+			shift
+			break
 		;;
 		*)
-            echo "Unknown option: $1" >&2
-            usage
-            exit 2
-        ;;
-    esac
+			echo "Unknown option: $1" >&2
+			usage
+			exit 2
+		;;
+	esac
 done
 
 ### no file to retore, just quit with usage
@@ -69,7 +85,7 @@ function is_kup_repository ()
 	is_kup_repository=$(bup --bup-dir="$repository_path" ls 2>/dev/null)
 	# for sake of clarity of code we return explicitly here
 	[[ "$is_kup_repository" == 'kup' ]] && return 0
- 	return 1
+	return 1
 }
 
 ### check if file to restore is any of the backups plans
@@ -119,7 +135,7 @@ kup_plan_count=$(grep 'Paths included=' "$kuprc_file_path" | wc -l)
 for file_to_restore_path in "${@}"; do
 
 ### we restore to original directory by default (if not given as option)
-[[ "$option_out_dir" == '.' ]] && out_dir="$(dirname "$file_to_restore_path")" || out_dir="$option_out_dir"
+[[ "$option_out_dir" == '/no/dir/no/where/existing' ]] && out_dir="$(dirname "$file_to_restore_path")" || out_dir="$option_out_dir"
 
 # TODO: add even more error resistance
 for (( i = 0 ; i < $kup_plan_count ; i++ )); do
@@ -159,8 +175,8 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 			echo "kioclient url: $kioclient_url" >&2
 			### commands pre last line is mysterious single '.' and last line is an empty one. we remove that
 			kup="$(kioclient ls "$kioclient_url" 2>/dev/null | head --lines=-2)"
- 			echo "snapshots: ..." >&2
- 			kioclient ls "$kioclient_url/$kup" 2>/dev/null | head --lines=-2 >&2
+			echo "snapshots: ..." >&2
+			kioclient ls "$kioclient_url/$kup" 2>/dev/null | head --lines=-2 >&2
 			snapshots=( $(kioclient ls "$kioclient_url/$kup" 2>/dev/null | head --lines=-2) )
 
 			# do we have the file?
@@ -169,16 +185,25 @@ for (( i = 0 ; i < $kup_plan_count ; i++ )); do
 			# TODO: test on entire directories
 			# TODO: is there a do-not-override option with bup?
 			echo "looking for: $search_in_backup_path …" >&2
- 			found="$(bup --bup-dir="$bup_dir" ls "$search_in_backup_path" 2>/dev/null)"
- 			if [[ $? = 0 ]]; then
+			found="$(bup --bup-dir="$bup_dir" ls "$search_in_backup_path" 2>/dev/null)"
+			if [[ $? = 0 ]]; then
 				echo "found: $found" >&2
-				echo "restoring to: $out_dir" >&2
- 				echo "running command: bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"" >&2
-				bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"
+				echo "restoring to directory: $out_dir" >&2
+				### create "backup" if not disabled
+				if ! $no_save ; then
+					file_to_restore_name="$(basename "$file_to_restore_path")"
+					file_backup_path="$out_dir/${file_to_restore_name}.$today"
+					if [[ -e "$file_backup_path" ]] ; then
+						echo "creating backup to: $file_backup_path" >&2
+						cp -rp "$out_dir/$file_to_restore_name" "$file_backup_path"
+					fi
+				fi
+				echo "running command: bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"" >&2
+				! $dry_run && bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"
 				continue 2 # with next file to restore
 			else
 				echo "not found" >&2
- 			fi
+			fi
 		fi
 	fi
 done
