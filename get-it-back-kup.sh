@@ -9,6 +9,9 @@
 # https://store.kde.org/p/1127689 says: kup can backup incrementaly (keeping older versions) or keep source and target directory in sync (i.e. not keeping older versions). Do we have to take care on this?
 # setup a remote backup repository and build code for this case as well (NOTE: bup can do this, but kup as well?)
 
+set -u # fail on unused variables
+
+
 function usage ()
 {
 	echo "usage: $(basename $0) [ opions ] <file-to-restore-full-path>" >&2
@@ -191,16 +194,14 @@ for file_restore_path in "${@}"; do
 					echo "found: $found" >&2
 					echo "restoring to directory: $out_dir" >&2
 					### create "backup" if not disabled
-					set -x
 					if ! $no_save ; then
-						file_to_restore_name="$(basename "$file_restore_path")"
-						file_backup_path="$out_dir/${file_to_restore_name}.$today"
+						file_restore_name="$(basename "$file_restore_path")"
+						file_backup_path="$out_dir/${file_restore_name}.$today"
 						if [[ -e "$file_restore_path" ]] ; then
 							echo "creating backup to: $file_backup_path" >&2
-							cp -rp "$out_dir/$file_to_restore_name" "$file_backup_path"
+							cp -rp "$out_dir/$file_restore_name" "$file_backup_path"
 						fi
 					fi
-					set +x
 					echo "running command: bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"" >&2
 					! $dry_run && bup --bup-dir="$bup_dir" restore --outdir="$out_dir" -v -v "$search_in_backup_path"
 					continue 2 # with next file to restore
