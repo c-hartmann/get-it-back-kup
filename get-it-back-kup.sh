@@ -30,7 +30,7 @@ dry_run=false
 
 ### by default we save (i.e. rename) existing (in out dir) files before replacing them
 no_save=false
-today=$(date --iso)
+now=$(date --iso=minutes)
 
 ### evaluate options given (out dir option names taken from bup)
 options="$( getopt --alternative --options C:c:Dk:S --longoptions outdir:,config:,dry-run,kuprc:,no-save --name "$0" -- "$@" )"
@@ -196,7 +196,7 @@ for file_restore_path in "${@}"; do
 					### create "backup" if not disabled
 					if ! $no_save ; then
 						file_restore_name="$(basename "$file_restore_path")"
-						file_backup_path="$out_dir/${file_restore_name}.$today"
+						file_backup_path="$out_dir/${file_restore_name}.$now"
 						if [[ -e "$file_restore_path" ]] ; then
 							echo "creating backup to: $file_backup_path" >&2
 							cp -rp "$out_dir/$file_restore_name" "$file_backup_path"
