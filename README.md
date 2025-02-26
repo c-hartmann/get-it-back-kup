@@ -34,3 +34,5 @@ Whereas options are:
 * support rsync based backups
 * add aditional actions, such as 'run in konsole', show list of files before restoring
 * add support for remote backups (if Kup can do this)
+* add / use an install script
+* give wife a hug
