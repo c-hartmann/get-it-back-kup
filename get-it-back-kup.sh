@@ -3,14 +3,16 @@
 ### get-it-back-kup.sh <file-to-restore-from-backup>
 ### restore-it-kup.sh <file-to-restore-from-backup>
 
+### WARNING: this can not handle rsync based Kup "backups"
+
 # TODO
-# handle multiple files to restore
 # https://store.kde.org/p/1127689 says: kup can backup to remote storages as well.  Check this out!
 # https://store.kde.org/p/1127689 says: kup can backup incrementaly (keeping older versions) or keep source and target directory in sync (i.e. not keeping older versions). Do we have to take care on this?
-# setup a remote backup repository and build code for this case as well (NOTE: bup can do this, but kup as well?)
+# setup a remote backup repository and build code for this case as well (NOTE: bup(1) can do this, but kup as well?)
+# handle rsync based backups as well!
+# use an [un]install script
 
 set -u # fail on unused variables
-
 
 function usage ()
 {
@@ -21,7 +23,7 @@ function usage ()
 kuprc_file_path="$HOME/.config/kuprc"
 
 ### bup restores to current directory by default
-# out_dir_option='/no/dir/no/where/existing'
+# out_dir_option='/no/directory/no/where/existing'
 out_dir_default="$(mktemp --dry-run --directory)"
 out_dir_option="$out_dir_default" # required later to get out dir for every(!) file individualy
 
@@ -32,7 +34,7 @@ dry_run=false
 no_save=false
 now=$(date --iso=minutes)
 
-### evaluate options given (out dir option names taken from bup)
+### evaluate options given (out dir option names taken from bup(1))
 options="$( getopt --alternative --options C:c:Dk:S --longoptions outdir:,config:,dry-run,kuprc:,no-save --name "$0" -- "$@" )"
 eval set -- "${options}"
 while true; do
@@ -187,7 +189,7 @@ for file_restore_path in "${@}"; do
 				search_in_backup_path="$base_path_latest/$file_restore_path"
 
 				# TODO: test on entire directories
-				# TODO: is there a do-not-override option with bup?
+				# TODO: is there a do-not-override option with bup? -> not found any. so we create our own save place
 				echo "looking for: $search_in_backup_path …" >&2
 				found="$(bup --bup-dir="$bup_dir" ls "$search_in_backup_path" 2>/dev/null)"
 				if [[ $? = 0 ]]; then
