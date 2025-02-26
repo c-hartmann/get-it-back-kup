@@ -1,6 +1,6 @@
 # Get It Back (Kup)
 
-A KDE service menu to get files (or directories) back from Kup based backup.
+A KDE service menu to get files (or directories) back from Kup based backups.
 
 ## Warning
 
@@ -29,3 +29,8 @@ Whereas options are:
 -S, --no-save (do not create backups of existing files before restore)
 ```
 
+## TODOs and IDEAs
+
+* support rsync based backups
+* add aditional actions, such as 'run in konsole', show list of files before restoring
+* add support for remote backups (if Kup can do this)
